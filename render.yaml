@@ -7,7 +7,7 @@ services:
     plan: free
     envVars:
       - key: ALLOWED_ORIGINS
-        value: https://YOUR-SITE-NAME.netlify.app
+        value: https://ocial-downloader.netlify.app
       - key: TIMEOUT_SECONDS
         value: "45"
       - key: ANALYZE_TIMEOUT_SECONDS
