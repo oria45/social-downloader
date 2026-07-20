@@ -238,7 +238,61 @@ async def _run_subprocess(args: list[str], timeout: int) -> tuple[int, bytes, by
     return proc.returncode, stdout, stderr
 
 
-async def _run_yt_dlp(url: str, out_dir: Path, selection: Selection | None = None) -> list[Path]:
+async def _file_has_audio(path: Path) -> bool:
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "csv=p=0",
+            str(path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+    except Exception:
+        # ffprobe missing or failed to run - fail open (assume audio is fine)
+        # rather than blocking downloads on what is just a diagnostic check.
+        return True
+    return bool(stdout.strip())
+
+
+def _build_tiktok_audio_retry_args(url: str, out_dir: Path) -> list[str]:
+    # TikTok's per-resolution formats (bytevc1_*/h264_*) sometimes report
+    # acodec: aac in their metadata but actually serve a video-only stream in
+    # practice (confirmed empirically - affects both the default "best" pick
+    # and explicit height-based selection). TikTok's own "download" format
+    # (the literal save-video endpoint) is reliably audio+video, so this is
+    # the corrective retry when the first attempt turns out silent.
+    return [
+        "yt-dlp",
+        "--no-playlist",
+        "--playlist-items",
+        "1",
+        "-f",
+        "download/best",
+        "--force-overwrites",
+        "-P",
+        str(out_dir),
+        "-o",
+        "%(id)s.%(ext)s",
+        "--print",
+        "after_move:filepath",
+        url,
+    ]
+
+
+async def _run_yt_dlp(
+    url: str,
+    out_dir: Path,
+    selection: Selection | None = None,
+    platform: Platform | None = None,
+) -> list[Path]:
     args = build_yt_dlp_args(url, out_dir, selection)
     returncode, stdout, stderr = await _run_subprocess(args, TIMEOUT_SECONDS)
     if returncode != 0:
@@ -247,7 +301,26 @@ async def _run_yt_dlp(url: str, out_dir: Path, selection: Selection | None = Non
     lines = [line.strip() for line in stdout.decode(errors="replace").splitlines() if line.strip()]
     if not lines:
         raise classify_stderr(stderr.decode(errors="replace"))
-    return [Path(lines[-1])]
+    result_path = Path(lines[-1])
+
+    is_audio_extraction = bool(selection) and selection.get("type") == "audio"
+    if platform == "tiktok" and not is_audio_extraction and not await _file_has_audio(result_path):
+        logger.warning("TikTok download has no audio, retrying with 'download' format: %s", url)
+        retry_args = _build_tiktok_audio_retry_args(url, out_dir)
+        retry_returncode, retry_stdout, _ = await _run_subprocess(retry_args, TIMEOUT_SECONDS)
+        if retry_returncode == 0:
+            retry_lines = [
+                line.strip() for line in retry_stdout.decode(errors="replace").splitlines() if line.strip()
+            ]
+            if retry_lines:
+                retry_path = Path(retry_lines[-1])
+                if retry_path != result_path:
+                    result_path.unlink(missing_ok=True)
+                return [retry_path]
+        # Retry failed for some reason - fall back to the original file rather
+        # than erroring out; a silent video is still better than none at all.
+
+    return [result_path]
 
 
 async def analyze_url(url: str) -> AnalysisResult:
@@ -309,10 +382,10 @@ async def run_download(
     out_dir = PLATFORM_DIRS[platform]
 
     if platform in ("tiktok", "youtube"):
-        return await _run_yt_dlp(url, out_dir, selection)
+        return await _run_yt_dlp(url, out_dir, selection, platform)
 
     try:
-        return await _run_yt_dlp(url, out_dir, selection)
+        return await _run_yt_dlp(url, out_dir, selection, platform)
     except ToolNotInstalledError:
         raise
     except Exception:

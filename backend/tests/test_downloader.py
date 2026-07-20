@@ -107,7 +107,7 @@ def test_youtube_routes_to_yt_dlp_only_no_gallery_dl_fallback(
 
     monkeypatch.setitem(downloader.PLATFORM_DIRS, "youtube", tmp_path)
 
-    async def failing_yt_dlp(url: str, out_dir, selection=None):
+    async def failing_yt_dlp(url: str, out_dir, selection=None, platform=None):
         raise RuntimeError("yt-dlp failed")
 
     async def unexpected_gallery_dl(url: str, out_dir):
@@ -361,3 +361,183 @@ def test_run_batch_download_propagates_tool_not_installed(
 
     with pytest.raises(ToolNotInstalledError):
         asyncio.run(run_batch_download(["https://tiktok.com/@u/video/1"], "tiktok"))
+
+
+def test_build_tiktok_audio_retry_args_forces_download_format_and_overwrite(tmp_path) -> None:
+    from app.downloader import _build_tiktok_audio_retry_args
+
+    args = _build_tiktok_audio_retry_args("https://www.tiktok.com/@u/video/1", tmp_path)
+
+    assert "-f" in args
+    assert args[args.index("-f") + 1] == "download/best"
+    assert "--force-overwrites" in args
+    # --force-overwrites is required: yt-dlp skips re-downloading an existing
+    # filename by default, which would silently keep the audio-less file.
+    assert args[-1] == "https://www.tiktok.com/@u/video/1"
+
+
+def test_run_yt_dlp_retries_when_tiktok_download_has_no_audio(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    silent_file = tmp_path / "123.mp4"
+    silent_file.write_bytes(b"video only")
+    fixed_file = tmp_path / "123.mp4"  # same filename - retry overwrites in place
+
+    call_count = {"n": 0}
+
+    async def fake_run_subprocess(args, timeout):
+        call_count["n"] += 1
+        if "-f" in args and args[args.index("-f") + 1] == "download/best":
+            fixed_file.write_bytes(b"video with audio")
+            return 0, str(fixed_file).encode(), b""
+        return 0, str(silent_file).encode(), b""
+
+    async def fake_has_audio(path):
+        return False  # first (and only distinct) file always reports no audio
+
+    monkeypatch.setattr(downloader, "_run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr(downloader, "_file_has_audio", fake_has_audio)
+
+    result = asyncio.run(
+        downloader._run_yt_dlp(
+            "https://www.tiktok.com/@u/video/123", tmp_path, selection=None, platform="tiktok"
+        )
+    )
+
+    assert call_count["n"] == 2  # initial attempt + one retry
+    assert result == [fixed_file]
+
+
+def test_run_yt_dlp_does_not_retry_when_audio_present(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    good_file = tmp_path / "123.mp4"
+    good_file.write_bytes(b"video with audio")
+
+    call_count = {"n": 0}
+
+    async def fake_run_subprocess(args, timeout):
+        call_count["n"] += 1
+        return 0, str(good_file).encode(), b""
+
+    async def fake_has_audio(path):
+        return True
+
+    monkeypatch.setattr(downloader, "_run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr(downloader, "_file_has_audio", fake_has_audio)
+
+    result = asyncio.run(
+        downloader._run_yt_dlp(
+            "https://www.tiktok.com/@u/video/123", tmp_path, selection=None, platform="tiktok"
+        )
+    )
+
+    assert call_count["n"] == 1  # no retry needed
+    assert result == [good_file]
+
+
+def test_run_yt_dlp_skips_audio_check_for_non_tiktok_platform(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    silent_file = tmp_path / "abc.mp4"
+    silent_file.write_bytes(b"video only")
+
+    async def fake_run_subprocess(args, timeout):
+        return 0, str(silent_file).encode(), b""
+
+    async def unexpected_has_audio(path):
+        raise AssertionError("audio check should be scoped to tiktok only")
+
+    monkeypatch.setattr(downloader, "_run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr(downloader, "_file_has_audio", unexpected_has_audio)
+
+    result = asyncio.run(
+        downloader._run_yt_dlp(
+            "https://www.youtube.com/watch?v=abc", tmp_path, selection=None, platform="youtube"
+        )
+    )
+
+    assert result == [silent_file]
+
+
+def test_run_yt_dlp_skips_audio_check_for_audio_only_selection(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    audio_file = tmp_path / "123.mp3"
+    audio_file.write_bytes(b"audio only, no video stream - expected for -x extraction")
+
+    async def fake_run_subprocess(args, timeout):
+        return 0, str(audio_file).encode(), b""
+
+    async def unexpected_has_audio(path):
+        raise AssertionError("audio check is for video downloads, not audio extraction")
+
+    monkeypatch.setattr(downloader, "_run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr(downloader, "_file_has_audio", unexpected_has_audio)
+
+    result = asyncio.run(
+        downloader._run_yt_dlp(
+            "https://www.tiktok.com/@u/video/123",
+            tmp_path,
+            selection={"type": "audio", "bitrate": 128},
+            platform="tiktok",
+        )
+    )
+
+    assert result == [audio_file]
+
+
+def test_file_has_audio_true_when_ffprobe_reports_audio_stream(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    class FakeProc:
+        async def communicate(self):
+            return b"audio\n", b""
+
+    async def fake_create_subprocess_exec(*args, **kwargs):
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    assert asyncio.run(downloader._file_has_audio(tmp_path / "some.mp4")) is True
+
+
+def test_file_has_audio_false_when_ffprobe_reports_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    class FakeProc:
+        async def communicate(self):
+            return b"", b""
+
+    async def fake_create_subprocess_exec(*args, **kwargs):
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    assert asyncio.run(downloader._file_has_audio(tmp_path / "some.mp4")) is False
+
+
+def test_file_has_audio_fails_open_when_ffprobe_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    async def fake_create_subprocess_exec(*args, **kwargs):
+        raise FileNotFoundError("ffprobe not found")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    # ffprobe missing shouldn't block downloads - fail open (assume audio ok)
+    assert asyncio.run(downloader._file_has_audio(tmp_path / "some.mp4")) is True
