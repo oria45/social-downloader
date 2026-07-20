@@ -9,14 +9,25 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 from app.config import MP3_BITRATE_CHOICES
-from app.downloader import analyze_url, detect_platform, run_download
-from app.errors import UnsupportedPlatformError
+from app.downloader import (
+    analyze_url,
+    detect_platform,
+    is_profile_url,
+    list_profile_items,
+    run_batch_download,
+    run_download,
+)
+from app.errors import NotAProfileUrlError, UnsupportedPlatformError
 from app.limiter import limiter
 from app.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
     AudioQuality,
+    BatchDownloadRequest,
     DownloadRequest,
+    ListRequest,
+    ListResponse,
+    ProfileItem,
     VideoQuality,
 )
 
@@ -106,3 +117,38 @@ async def analyze(request: Request, payload: AnalyzeRequest) -> AnalyzeResponse:
         video_qualities=video_qualities,
         audio_qualities=audio_qualities,
     )
+
+
+@router.post("/list", response_model=ListResponse)
+@limiter.limit("10/minute")
+async def list_profile(request: Request, payload: ListRequest) -> ListResponse:
+    platform = detect_platform(payload.url)
+    if platform is None:
+        raise UnsupportedPlatformError(
+            "Only TikTok, Instagram, Facebook, and YouTube links are supported."
+        )
+    if not is_profile_url(payload.url, platform):
+        raise NotAProfileUrlError(
+            "That doesn't look like a profile/channel link. Paste a specific video's link instead."
+        )
+
+    items, truncated = await list_profile_items(payload.url, platform)
+    return ListResponse(
+        platform=platform,
+        items=[ProfileItem(**item) for item in items],
+        truncated=truncated,
+    )
+
+
+@router.post("/download-batch")
+@limiter.limit("3/minute")
+async def download_batch(request: Request, payload: BatchDownloadRequest) -> FileResponse:
+    platform = detect_platform(payload.urls[0])
+    if platform is None or any(detect_platform(u) != platform for u in payload.urls):
+        raise UnsupportedPlatformError(
+            "Only TikTok, Instagram, Facebook, and YouTube links are supported, and all "
+            "selected items must be from the same platform."
+        )
+
+    files = await run_batch_download(payload.urls, platform)
+    return _build_file_response(files, platform)

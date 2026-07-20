@@ -7,10 +7,14 @@ from app.downloader import (
     analyze_url,
     build_gallery_dl_args,
     build_yt_dlp_args,
+    build_yt_dlp_list_args,
     detect_platform,
+    is_profile_url,
+    list_profile_items,
+    run_batch_download,
     run_download,
 )
-from app.errors import ContentUnavailableError
+from app.errors import ContentUnavailableError, DownloadFailedError, ToolNotInstalledError
 
 
 @pytest.mark.parametrize(
@@ -208,3 +212,147 @@ def test_analyze_url_raises_on_real_error(monkeypatch: pytest.MonkeyPatch) -> No
 
     with pytest.raises(ContentUnavailableError):
         asyncio.run(analyze_url("https://www.youtube.com/watch?v=private123"))
+
+
+@pytest.mark.parametrize(
+    "url,platform,expected",
+    [
+        ("https://www.tiktok.com/@tiktok", "tiktok", True),
+        ("https://www.tiktok.com/@tiktok/video/123", "tiktok", False),
+        ("https://www.youtube.com/@YouTube", "youtube", True),
+        ("https://www.youtube.com/@YouTube/videos", "youtube", True),
+        ("https://www.youtube.com/@YouTube/shorts", "youtube", True),
+        ("https://www.youtube.com/channel/UC123", "youtube", True),
+        ("https://www.youtube.com/c/somechannel", "youtube", True),
+        ("https://www.youtube.com/user/someuser", "youtube", True),
+        ("https://www.youtube.com/watch?v=abc", "youtube", False),
+        ("https://www.youtube.com/shorts/abc", "youtube", False),
+        ("https://www.instagram.com/instagram/", "instagram", False),
+        ("https://www.facebook.com/someuser", "facebook", False),
+    ],
+)
+def test_is_profile_url(url: str, platform: str, expected: bool) -> None:
+    assert is_profile_url(url, platform) == expected
+
+
+def test_build_yt_dlp_list_args_caps_and_uses_flat_playlist(tmp_path) -> None:
+    args = build_yt_dlp_list_args("https://www.tiktok.com/@user", 24)
+    assert "--flat-playlist" in args
+    assert "--dump-json" in args
+    assert "--playlist-end" in args
+    assert args[args.index("--playlist-end") + 1] == "24"
+    assert args[-1] == "https://www.tiktok.com/@user"
+
+
+def test_list_profile_items_parses_ndjson_and_flags_truncation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import downloader
+
+    entries = [
+        {
+            "id": str(i),
+            "title": f"video {i}",
+            "url": f"https://www.tiktok.com/@user/video/{i}",
+            "thumbnails": [{"url": f"https://thumb/{i}.jpg", "preference": -1}],
+        }
+        for i in range(downloader.LIST_ITEM_CAP)
+    ]
+    stdout = "\n".join(json.dumps(e) for e in entries).encode()
+    monkeypatch.setattr(downloader, "_run_subprocess", _fake_run_subprocess(0, stdout, b""))
+
+    items, truncated = asyncio.run(list_profile_items("https://www.tiktok.com/@user", "tiktok"))
+
+    assert len(items) == downloader.LIST_ITEM_CAP
+    assert truncated is True
+    assert items[0]["id"] == "0"
+    assert items[0]["url"] == "https://www.tiktok.com/@user/video/0"
+    assert items[0]["thumbnail_url"] == "https://thumb/0.jpg"
+
+
+def test_list_profile_items_not_truncated_when_fewer_than_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import downloader
+
+    entries = [
+        {"id": "1", "title": "only one", "url": "https://www.tiktok.com/@user/video/1"},
+    ]
+    stdout = json.dumps(entries[0]).encode()
+    monkeypatch.setattr(downloader, "_run_subprocess", _fake_run_subprocess(0, stdout, b""))
+
+    items, truncated = asyncio.run(list_profile_items("https://www.tiktok.com/@user", "tiktok"))
+
+    assert len(items) == 1
+    assert truncated is False
+
+
+def test_list_profile_items_raises_when_nothing_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import downloader
+
+    monkeypatch.setattr(downloader, "_run_subprocess", _fake_run_subprocess(0, b"", b""))
+
+    with pytest.raises(DownloadFailedError):
+        asyncio.run(list_profile_items("https://www.tiktok.com/@user", "tiktok"))
+
+
+def test_youtube_listing_url_appends_videos_tab() -> None:
+    from app.downloader import _youtube_listing_url
+
+    assert _youtube_listing_url("https://www.youtube.com/@YouTube") == (
+        "https://www.youtube.com/@YouTube/videos"
+    )
+    assert _youtube_listing_url("https://www.youtube.com/@YouTube/videos") == (
+        "https://www.youtube.com/@YouTube/videos"
+    )
+    assert _youtube_listing_url("https://www.youtube.com/@YouTube/shorts") == (
+        "https://www.youtube.com/@YouTube/shorts"
+    )
+
+
+def test_run_batch_download_partial_success(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from app import downloader
+
+    good_file = tmp_path / "good.mp4"
+    good_file.write_bytes(b"data")
+
+    async def fake_run_download(url: str, platform: str, selection=None):
+        if "bad" in url:
+            raise RuntimeError("boom")
+        return [good_file]
+
+    monkeypatch.setattr(downloader, "run_download", fake_run_download)
+
+    results = asyncio.run(
+        run_batch_download(
+            ["https://tiktok.com/@u/video/good1", "https://tiktok.com/@u/video/bad1"], "tiktok"
+        )
+    )
+
+    assert results == [good_file]
+
+
+def test_run_batch_download_raises_when_all_fail(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import downloader
+
+    async def failing_run_download(url: str, platform: str, selection=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(downloader, "run_download", failing_run_download)
+
+    with pytest.raises(DownloadFailedError):
+        asyncio.run(run_batch_download(["https://tiktok.com/@u/video/1"], "tiktok"))
+
+
+def test_run_batch_download_propagates_tool_not_installed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import downloader
+
+    async def missing_tool(url: str, platform: str, selection=None):
+        raise ToolNotInstalledError("missing")
+
+    monkeypatch.setattr(downloader, "run_download", missing_tool)
+
+    with pytest.raises(ToolNotInstalledError):
+        asyncio.run(run_batch_download(["https://tiktok.com/@u/video/1"], "tiktok"))

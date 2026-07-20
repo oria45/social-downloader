@@ -1,11 +1,20 @@
 import asyncio
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Literal, TypedDict
 from urllib.parse import urlsplit
 
-from app.config import ANALYZE_TIMEOUT_SECONDS, PLATFORM_DIRS, TIMEOUT_SECONDS
+from app.config import (
+    ANALYZE_TIMEOUT_SECONDS,
+    BATCH_CONCURRENCY,
+    BATCH_ITEM_TIMEOUT_SECONDS,
+    LIST_ITEM_CAP,
+    LIST_TIMEOUT_SECONDS,
+    PLATFORM_DIRS,
+    TIMEOUT_SECONDS,
+)
 from app.errors import (
     DownloadFailedError,
     DownloadTimeoutError,
@@ -30,6 +39,19 @@ class AnalysisResult(TypedDict, total=False):
     thumbnail: str | None
     video_heights: list[int]
     best_audio_abr: float
+
+
+class ProfileItem(TypedDict):
+    id: str
+    title: str | None
+    thumbnail_url: str | None
+    url: str
+
+
+# Platforms with a working flat-playlist listing (no login required). Instagram
+# is deliberately excluded: gallery-dl's profile/post listing requires session
+# cookies and silently returns nothing without them (confirmed empirically).
+PROFILE_LISTING_PLATFORMS: set[Platform] = {"tiktok", "youtube"}
 
 TIKTOK_HOSTS = {"tiktok.com", "vm.tiktok.com", "vt.tiktok.com", "m.tiktok.com"}
 INSTAGRAM_HOSTS = {"instagram.com"}
@@ -56,6 +78,27 @@ def detect_platform(url: str) -> Platform | None:
     return None
 
 
+def is_profile_url(url: str, platform: Platform) -> bool:
+    if platform not in PROFILE_LISTING_PLATFORMS:
+        return False
+
+    path = urlsplit(url).path.rstrip("/")
+
+    if platform == "tiktok":
+        return bool(re.fullmatch(r"/@[^/]+", path))
+
+    if platform == "youtube":
+        if re.search(r"/watch(/|$)", path) or re.fullmatch(r"/shorts/[^/]+", path):
+            return False
+        return bool(
+            re.fullmatch(
+                r"/(@[^/]+|channel/[^/]+|c/[^/]+|user/[^/]+)(/videos|/shorts|/streams)?", path
+            )
+        )
+
+    return False
+
+
 def build_yt_dlp_args(url: str, out_dir: Path, selection: Selection | None = None) -> list[str]:
     args = ["yt-dlp", "--no-playlist", "--playlist-items", "1", "-P", str(out_dir)]
 
@@ -76,6 +119,75 @@ def build_yt_dlp_args(url: str, out_dir: Path, selection: Selection | None = Non
 
 def build_yt_dlp_analyze_args(url: str) -> list[str]:
     return ["yt-dlp", "-J", "--no-warnings", "--no-playlist", "--playlist-items", "1", url]
+
+
+def _youtube_listing_url(url: str) -> str:
+    # A bare YouTube channel URL (e.g. /@handle) enumerates ALL of its tabs
+    # (Videos + Shorts + Live) as separate nested playlists, so --playlist-end
+    # applies per-tab rather than as a global cap (confirmed empirically: a cap
+    # of 3 returned 9 entries). Scoping to /videos explicitly fixes this.
+    parsed = urlsplit(url)
+    path = parsed.path.rstrip("/")
+    if not re.search(r"/(videos|shorts|streams)$", path):
+        path = f"{path}/videos"
+    return parsed._replace(path=path).geturl()
+
+
+def build_yt_dlp_list_args(url: str, limit: int) -> list[str]:
+    return [
+        "yt-dlp",
+        "--flat-playlist",
+        "--dump-json",
+        "--playlist-end",
+        str(limit),
+        "--no-warnings",
+        url,
+    ]
+
+
+def _best_thumbnail_url(entry: dict) -> str | None:
+    thumbnails = entry.get("thumbnails") or []
+    if not thumbnails:
+        return entry.get("thumbnail")
+    best = max(thumbnails, key=lambda t: t.get("preference", t.get("height", 0)) or 0)
+    return best.get("url")
+
+
+async def list_profile_items(url: str, platform: Platform) -> tuple[list[ProfileItem], bool]:
+    if platform == "youtube":
+        url = _youtube_listing_url(url)
+
+    args = build_yt_dlp_list_args(url, LIST_ITEM_CAP)
+    returncode, stdout, stderr = await _run_subprocess(args, LIST_TIMEOUT_SECONDS)
+    if returncode != 0:
+        raise classify_stderr(stderr.decode(errors="replace"))
+
+    items: list[ProfileItem] = []
+    for line in stdout.decode(errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        entry_url = entry.get("url") or entry.get("webpage_url")
+        if not entry_url:
+            continue
+        items.append(
+            {
+                "id": str(entry.get("id", "")),
+                "title": entry.get("title"),
+                "thumbnail_url": _best_thumbnail_url(entry),
+                "url": entry_url,
+            }
+        )
+
+    if not items:
+        raise DownloadFailedError("Couldn't find any videos for this profile.")
+
+    truncated = len(items) >= LIST_ITEM_CAP
+    return items[:LIST_ITEM_CAP], truncated
 
 
 def build_gallery_dl_args(url: str, out_dir: Path) -> list[str]:
@@ -203,3 +315,26 @@ async def run_download(
         raise
     except Exception:
         return await _run_gallery_dl(url, out_dir)
+
+
+async def run_batch_download(urls: list[str], platform: Platform) -> list[Path]:
+    semaphore = asyncio.Semaphore(BATCH_CONCURRENCY)
+
+    async def _download_one(url: str) -> Path | None:
+        async with semaphore:
+            try:
+                files = await asyncio.wait_for(
+                    run_download(url, platform), timeout=BATCH_ITEM_TIMEOUT_SECONDS
+                )
+                return files[0] if files else None
+            except ToolNotInstalledError:
+                raise
+            except Exception as exc:
+                logger.warning("Batch item failed: %s (%s)", url, exc)
+                return None
+
+    results = await asyncio.gather(*(_download_one(u) for u in urls))
+    successful = [p for p in results if p is not None]
+    if not successful:
+        raise DownloadFailedError("None of the selected items could be downloaded.")
+    return successful

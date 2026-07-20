@@ -1,9 +1,13 @@
 import { useState } from "react";
 import styles from "./DownloadForm.module.css";
 import { LinkForm } from "./LinkForm";
+import { ProfileItemGrid } from "./ProfileItemGrid";
 import { QualityPicker } from "./QualityPicker";
+import { isProfileUrl } from "./profileDetection";
 import { useAnalyze } from "./useAnalyze";
+import { useBatchDownload } from "./useBatchDownload";
 import { useDownload } from "./useDownload";
+import { useListProfile } from "./useListProfile";
 import type { Selection } from "./types";
 
 const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "webm", "mkv"]);
@@ -34,15 +38,30 @@ export function DownloadForm() {
   const [selection, setSelection] = useState<Selection | null>(null);
   const { state: analyzeState, analyze, reset: resetAnalyze } = useAnalyze();
   const { state: downloadState, download, reset: resetDownload } = useDownload();
+  const { state: listState, listProfile, reset: resetList } = useListProfile();
+  const { state: batchDownloadState, downloadBatch, reset: resetBatchDownload } =
+    useBatchDownload();
+
+  // A pasted URL is either a single post (existing analyze -> pick quality -> download
+  // flow) or a profile/channel (new list -> multi-select -> batch download flow) - never
+  // both, so exactly one pair of states is ever active at a time.
+  const finalDownloadState = listState.status === "success" ? batchDownloadState : downloadState;
+  const isDownloading = finalDownloadState.status === "loading";
 
   function handleLinkSubmit(submittedUrl: string) {
     setUrl(submittedUrl);
-    void analyze(submittedUrl);
+    if (isProfileUrl(submittedUrl)) {
+      void listProfile(submittedUrl);
+    } else {
+      void analyze(submittedUrl);
+    }
   }
 
   function handleChangeLink() {
     resetAnalyze();
     resetDownload();
+    resetList();
+    resetBatchDownload();
     setSelection(null);
   }
 
@@ -50,7 +69,9 @@ export function DownloadForm() {
     void download(url, selection ?? undefined);
   }
 
-  const isDownloading = downloadState.status === "loading";
+  function handleBatchDownload(urls: string[]) {
+    void downloadBatch(urls);
+  }
 
   return (
     <section className={styles.container} aria-labelledby="download-heading">
@@ -59,15 +80,24 @@ export function DownloadForm() {
       </h1>
       <p className={styles.subtitle}>Paste a link below to download it to this computer.</p>
 
-      {downloadState.status === "idle" || downloadState.status === "error" ? (
+      {finalDownloadState.status === "idle" || finalDownloadState.status === "error" ? (
         <>
-          {analyzeState.status !== "success" && (
-            <LinkForm onSubmit={handleLinkSubmit} isLoading={analyzeState.status === "loading"} />
+          {analyzeState.status !== "success" && listState.status !== "success" && (
+            <LinkForm
+              onSubmit={handleLinkSubmit}
+              isLoading={analyzeState.status === "loading" || listState.status === "loading"}
+            />
           )}
 
           {analyzeState.status === "error" && (
             <p className={styles.statusError} role="alert">
               {analyzeState.error.message}
+            </p>
+          )}
+
+          {listState.status === "error" && (
+            <p className={styles.statusError} role="alert">
+              {listState.error.message}
             </p>
           )}
 
@@ -117,29 +147,42 @@ export function DownloadForm() {
             </div>
           )}
 
-          {downloadState.status === "error" && (
+          {listState.status === "success" && (
+            <div className={styles.panel}>
+              <ProfileItemGrid
+                items={listState.result.items}
+                truncated={listState.result.truncated}
+                onDownloadSelected={handleBatchDownload}
+                onChangeLink={handleChangeLink}
+                isLoading={isDownloading}
+              />
+            </div>
+          )}
+
+          {finalDownloadState.status === "error" && (
             <p className={styles.statusError} role="alert">
-              {downloadState.error.message}
+              {finalDownloadState.error.message}
             </p>
           )}
         </>
       ) : null}
 
-      {downloadState.status === "loading" && (
+      {finalDownloadState.status === "loading" && (
         <p className={styles.statusLoading} role="status">
           Downloading — this can take up to a minute…
         </p>
       )}
 
-      {downloadState.status === "success" && (
+      {finalDownloadState.status === "success" && (
         <div className={styles.statusSuccess} role="status">
           <p>
-            Saved <span className={styles.platformBadge}>{downloadState.result.platform}</span>{" "}
-            content to your computer as <code>{downloadState.result.filename}</code>
+            Saved{" "}
+            <span className={styles.platformBadge}>{finalDownloadState.result.platform}</span>{" "}
+            content to your computer as <code>{finalDownloadState.result.filename}</code>
           </p>
           {(() => {
-            const kind = previewKind(downloadState.result.filename);
-            const src = downloadState.result.blobUrl;
+            const kind = previewKind(finalDownloadState.result.filename);
+            const src = finalDownloadState.result.blobUrl;
             if (kind === "video") {
               return <video className={styles.preview} src={src} controls />;
             }

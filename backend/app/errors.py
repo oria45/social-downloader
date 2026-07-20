@@ -20,6 +20,11 @@ class UnsupportedPlatformError(DownloadError):
     http_status = 422
 
 
+class NotAProfileUrlError(DownloadError):
+    error_code = "not_a_profile_url"
+    http_status = 422
+
+
 class ContentUnavailableError(DownloadError):
     error_code = "content_unavailable"
     http_status = 502

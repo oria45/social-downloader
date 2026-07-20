@@ -214,3 +214,111 @@ def test_analyze_unsupported_platform() -> None:
     assert response.status_code == 422
     body = response.json()
     assert body["error_code"] == "unsupported_platform"
+
+
+def test_list_profile_returns_items(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_list_profile_items(url: str, platform: str):
+        return (
+            [
+                {
+                    "id": "1",
+                    "title": "video one",
+                    "thumbnail_url": "https://thumb/1.jpg",
+                    "url": "https://www.tiktok.com/@user/video/1",
+                }
+            ],
+            False,
+        )
+
+    monkeypatch.setattr(api_module, "list_profile_items", fake_list_profile_items)
+
+    response = client.post("/api/list", json={"url": "https://www.tiktok.com/@user"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["platform"] == "tiktok"
+    assert body["truncated"] is False
+    assert body["items"] == [
+        {
+            "id": "1",
+            "title": "video one",
+            "thumbnail_url": "https://thumb/1.jpg",
+            "url": "https://www.tiktok.com/@user/video/1",
+        }
+    ]
+
+
+def test_list_profile_rejects_non_profile_url() -> None:
+    response = client.post(
+        "/api/list", json={"url": "https://www.tiktok.com/@user/video/123"}
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error_code"] == "not_a_profile_url"
+
+
+def test_list_profile_unsupported_platform() -> None:
+    response = client.post("/api/list", json={"url": "https://example.com/someone"})
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error_code"] == "unsupported_platform"
+
+
+def test_download_batch_streams_zip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    file_a = tmp_path / "1.mp4"
+    file_b = tmp_path / "2.mp4"
+    file_a.write_bytes(b"video a")
+    file_b.write_bytes(b"video b")
+
+    async def fake_run_batch_download(urls: list[str], platform: str) -> list[Path]:
+        return [file_a, file_b]
+
+    monkeypatch.setattr(api_module, "run_batch_download", fake_run_batch_download)
+
+    response = client.post(
+        "/api/download-batch",
+        json={
+            "urls": [
+                "https://www.tiktok.com/@user/video/1",
+                "https://www.tiktok.com/@user/video/2",
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["x-platform"] == "tiktok"
+    assert not file_a.exists()
+    assert not file_b.exists()
+
+
+def test_download_batch_rejects_more_than_max_items() -> None:
+    urls = [f"https://www.tiktok.com/@user/video/{i}" for i in range(9)]
+
+    response = client.post("/api/download-batch", json={"urls": urls})
+
+    assert response.status_code == 422
+
+
+def test_download_batch_rejects_empty_list() -> None:
+    response = client.post("/api/download-batch", json={"urls": []})
+
+    assert response.status_code == 422
+
+
+def test_download_batch_rejects_mixed_platforms() -> None:
+    response = client.post(
+        "/api/download-batch",
+        json={
+            "urls": [
+                "https://www.tiktok.com/@user/video/1",
+                "https://www.youtube.com/watch?v=abc",
+            ]
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error_code"] == "unsupported_platform"

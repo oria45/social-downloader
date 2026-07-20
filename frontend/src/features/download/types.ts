@@ -34,3 +34,19 @@ export interface AnalyzeResponse {
 }
 
 export type Selection = { type: "video"; height: number } | { type: "audio"; bitrate: number };
+
+export interface ProfileItem {
+  id: string;
+  title: string | null;
+  thumbnail_url: string | null;
+  url: string;
+}
+
+export interface ListResponse {
+  status: "success";
+  platform: Platform;
+  items: ProfileItem[];
+  truncated: boolean;
+}
+
+export const BATCH_MAX_ITEMS = 8;

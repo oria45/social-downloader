@@ -1,7 +1,9 @@
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.config import BATCH_MAX_ITEMS
 
 
 class UrlRequest(BaseModel):
@@ -34,7 +36,24 @@ class DownloadRequest(UrlRequest):
     selection: DownloadSelection | None = None
 
 
+class BatchDownloadRequest(BaseModel):
+    urls: list[str] = Field(..., min_length=1, max_length=BATCH_MAX_ITEMS)
+
+    @field_validator("urls")
+    @classmethod
+    def validate_urls(cls, v: list[str]) -> list[str]:
+        for url in v:
+            parsed = urlsplit(url)
+            if parsed.scheme not in ("http", "https") or not parsed.hostname:
+                raise ValueError("invalid_url")
+        return v
+
+
 class AnalyzeRequest(UrlRequest):
+    pass
+
+
+class ListRequest(UrlRequest):
     pass
 
 
@@ -57,6 +76,20 @@ class AnalyzeResponse(BaseModel):
     supports_quality_selection: bool
     video_qualities: list[VideoQuality] = []
     audio_qualities: list[AudioQuality] = []
+
+
+class ProfileItem(BaseModel):
+    id: str
+    title: str | None
+    thumbnail_url: str | None
+    url: str
+
+
+class ListResponse(BaseModel):
+    status: str = "success"
+    platform: str
+    items: list[ProfileItem]
+    truncated: bool
 
 
 class ErrorResponse(BaseModel):
