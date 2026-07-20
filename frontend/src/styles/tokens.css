@@ -1,0 +1,41 @@
+:root {
+  /* Warm-tinted neutrals (hue 55-60, terracotta family) instead of cool gray-blue */
+  --color-bg: oklch(96% 0.018 65);
+  --color-surface: oklch(99% 0.01 65);
+  --color-surface-sunken: oklch(93% 0.022 65);
+  --color-text: oklch(26% 0.03 40);
+  --color-text-muted: oklch(49% 0.035 45);
+  --color-border: oklch(84% 0.03 55);
+
+  /* Terracotta accent carries the personality: warm, distinctive, not the generic indigo default */
+  --color-accent: oklch(62% 0.17 45);
+  --color-accent-hover: oklch(55% 0.17 45);
+  --color-accent-soft: oklch(92% 0.05 50);
+
+  --color-success: oklch(60% 0.13 145);
+  --color-success-soft: oklch(93% 0.05 150);
+  --color-error: oklch(56% 0.19 27);
+  --color-error-soft: oklch(93% 0.04 30);
+
+  /* Fixed rem scale, not fluid clamp() - product register views at consistent DPI */
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-md: 1.2rem;
+  --text-lg: 1.44rem;
+  --text-xl: 2rem;
+
+  --space-xs: 0.4rem;
+  --space-sm: 0.75rem;
+  --space-md: 1.25rem;
+  --space-lg: 2rem;
+  --space-xl: 3.5rem;
+
+  --radius-sm: 0.6rem;
+  --radius-md: 0.9rem;
+  --radius-lg: 1.4rem;
+  --radius-pill: 999px;
+
+  --duration-fast: 150ms;
+  --duration-normal: 220ms;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}

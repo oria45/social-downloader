@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+yt-dlp
+gallery-dl
+slowapi
+pytest
+httpx

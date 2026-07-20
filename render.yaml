@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: social-downloader-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://YOUR-SITE-NAME.netlify.app
+      - key: TIMEOUT_SECONDS
+        value: "45"
+      - key: ANALYZE_TIMEOUT_SECONDS
+        value: "30"
+      - key: FILE_MAX_AGE_MINUTES
+        value: "30"
