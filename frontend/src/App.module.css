@@ -1,0 +1,6 @@
+.about {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+  max-width: 34rem;
+}

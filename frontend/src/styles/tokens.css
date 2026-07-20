@@ -14,8 +14,11 @@
 
   --color-success: oklch(60% 0.13 145);
   --color-success-soft: oklch(93% 0.05 150);
+  --color-success-text: oklch(38% 0.1 145);
   --color-error: oklch(56% 0.19 27);
   --color-error-soft: oklch(93% 0.04 30);
+
+  --shadow-sm: 0 1px 2px oklch(30% 0.03 40 / 0.06);
 
   /* Fixed rem scale, not fluid clamp() - product register views at consistent DPI */
   --text-sm: 0.875rem;
@@ -38,4 +41,30 @@
   --duration-fast: 150ms;
   --duration-normal: 220ms;
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Warm dark mode: same hue family as light mode (a lamp-lit room at night),
+   not a neutral gray-black "developer tool" theme. System-preference only,
+   no in-app toggle. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: oklch(24% 0.025 55);
+    --color-surface: oklch(30% 0.025 55);
+    --color-surface-sunken: oklch(19% 0.022 55);
+    --color-text: oklch(92% 0.015 60);
+    --color-text-muted: oklch(68% 0.02 55);
+    --color-border: oklch(38% 0.025 55);
+
+    --color-accent: oklch(68% 0.15 45);
+    --color-accent-hover: oklch(74% 0.15 45);
+    --color-accent-soft: oklch(30% 0.06 50);
+
+    --color-success: oklch(70% 0.12 145);
+    --color-success-soft: oklch(28% 0.05 150);
+    --color-success-text: oklch(85% 0.08 150);
+    --color-error: oklch(68% 0.16 25);
+    --color-error-soft: oklch(28% 0.06 25);
+
+    --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.35);
+  }
 }
