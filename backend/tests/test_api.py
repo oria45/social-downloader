@@ -225,6 +225,7 @@ def test_list_profile_returns_items(monkeypatch: pytest.MonkeyPatch) -> None:
                     "title": "video one",
                     "thumbnail_url": "https://thumb/1.jpg",
                     "url": "https://www.tiktok.com/@user/video/1",
+                    "view_count": 52600,
                 }
             ],
             False,
@@ -244,6 +245,7 @@ def test_list_profile_returns_items(monkeypatch: pytest.MonkeyPatch) -> None:
             "title": "video one",
             "thumbnail_url": "https://thumb/1.jpg",
             "url": "https://www.tiktok.com/@user/video/1",
+            "view_count": 52600,
         }
     ]
 

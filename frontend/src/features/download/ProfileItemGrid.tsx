@@ -12,6 +12,12 @@ interface ProfileItemGridProps {
   isLoading: boolean;
 }
 
+function formatViewCount(count: number): string {
+  if (count < 1000) return String(count);
+  if (count < 1_000_000) return `${(count / 1000).toFixed(1).replace(/\.0$/, "")}K`;
+  return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+}
+
 export function ProfileItemGrid({
   items,
   truncated,
@@ -86,6 +92,9 @@ export function ProfileItemGrid({
                 />
               </span>
               {item.title && <p className={styles.itemTitle}>{item.title}</p>}
+              {item.view_count !== null && (
+                <p className={styles.viewCount}>{formatViewCount(item.view_count)} views</p>
+              )}
             </button>
           );
         })}

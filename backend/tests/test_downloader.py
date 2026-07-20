@@ -255,6 +255,7 @@ def test_list_profile_items_parses_ndjson_and_flags_truncation(
             "title": f"video {i}",
             "url": f"https://www.tiktok.com/@user/video/{i}",
             "thumbnails": [{"url": f"https://thumb/{i}.jpg", "preference": -1}],
+            "view_count": i * 1000,
         }
         for i in range(downloader.LIST_ITEM_CAP)
     ]
@@ -268,6 +269,8 @@ def test_list_profile_items_parses_ndjson_and_flags_truncation(
     assert items[0]["id"] == "0"
     assert items[0]["url"] == "https://www.tiktok.com/@user/video/0"
     assert items[0]["thumbnail_url"] == "https://thumb/0.jpg"
+    assert items[0]["view_count"] == 0
+    assert items[1]["view_count"] == 1000
 
 
 def test_list_profile_items_not_truncated_when_fewer_than_cap(
@@ -284,6 +287,8 @@ def test_list_profile_items_not_truncated_when_fewer_than_cap(
     items, truncated = asyncio.run(list_profile_items("https://www.tiktok.com/@user", "tiktok"))
 
     assert len(items) == 1
+    # view_count is absent from this entry - must degrade to None, not raise
+    assert items[0]["view_count"] is None
     assert truncated is False
 
 

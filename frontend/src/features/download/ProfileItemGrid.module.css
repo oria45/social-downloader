@@ -87,6 +87,12 @@
   font-weight: 600;
 }
 
+.viewCount {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
 .selectionNote {
   font-size: var(--text-sm);
   color: var(--color-text-muted);

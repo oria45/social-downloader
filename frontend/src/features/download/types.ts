@@ -40,6 +40,7 @@ export interface ProfileItem {
   title: string | null;
   thumbnail_url: string | null;
   url: string;
+  view_count: number | null;
 }
 
 export interface ListResponse {

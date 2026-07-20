@@ -46,6 +46,7 @@ class ProfileItem(TypedDict):
     title: str | None
     thumbnail_url: str | None
     url: str
+    view_count: int | None
 
 
 # Platforms with a working flat-playlist listing (no login required). Instagram
@@ -180,6 +181,7 @@ async def list_profile_items(url: str, platform: Platform) -> tuple[list[Profile
                 "title": entry.get("title"),
                 "thumbnail_url": _best_thumbnail_url(entry),
                 "url": entry_url,
+                "view_count": entry.get("view_count"),
             }
         )
 

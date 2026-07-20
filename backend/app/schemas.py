@@ -83,6 +83,7 @@ class ProfileItem(BaseModel):
     title: str | None
     thumbnail_url: str | None
     url: str
+    view_count: int | None
 
 
 class ListResponse(BaseModel):
