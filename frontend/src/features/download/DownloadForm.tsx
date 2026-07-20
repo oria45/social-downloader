@@ -1,6 +1,5 @@
 import { useState } from "react";
 import styles from "./DownloadForm.module.css";
-import { previewSrc } from "./apiBase";
 import { LinkForm } from "./LinkForm";
 import { QualityPicker } from "./QualityPicker";
 import { useAnalyze } from "./useAnalyze";
@@ -9,14 +8,16 @@ import type { Selection } from "./types";
 
 const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "webm", "mkv"]);
 const AUDIO_EXTENSIONS = new Set(["mp3", "m4a", "wav", "ogg", "opus"]);
+const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "webp"]);
 
-type PreviewKind = "video" | "audio" | "image";
+type PreviewKind = "video" | "audio" | "image" | "file";
 
 function previewKind(filename: string): PreviewKind {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
   if (VIDEO_EXTENSIONS.has(ext)) return "video";
   if (AUDIO_EXTENSIONS.has(ext)) return "audio";
-  return "image";
+  if (IMAGE_EXTENSIONS.has(ext)) return "image";
+  return "file";
 }
 
 function defaultSelection(
@@ -134,23 +135,24 @@ export function DownloadForm() {
         <div className={styles.statusSuccess} role="status">
           <p>
             Saved <span className={styles.platformBadge}>{downloadState.result.platform}</span>{" "}
-            content to <code>{downloadState.result.filenames.join(", ")}</code>
+            content to your computer as <code>{downloadState.result.filename}</code>
           </p>
-          {downloadState.result.preview_url &&
-            downloadState.result.filenames[0] &&
-            (() => {
-              const kind = previewKind(downloadState.result.filenames[0]);
-              const src = previewSrc(downloadState.result.preview_url);
-              if (kind === "video") {
-                return <video className={styles.preview} src={src} controls />;
-              }
-              if (kind === "audio") {
-                return <audio className={styles.preview} src={src} controls />;
-              }
+          {(() => {
+            const kind = previewKind(downloadState.result.filename);
+            const src = downloadState.result.blobUrl;
+            if (kind === "video") {
+              return <video className={styles.preview} src={src} controls />;
+            }
+            if (kind === "audio") {
+              return <audio className={styles.preview} src={src} controls />;
+            }
+            if (kind === "image") {
               return (
                 <img className={styles.preview} src={src} alt="Downloaded content preview" />
               );
-            })()}
+            }
+            return null;
+          })()}
           <div className={styles.actionRow}>
             <button className={styles.linkButton} type="button" onClick={handleChangeLink}>
               Download another link

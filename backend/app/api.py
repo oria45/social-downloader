@@ -1,4 +1,12 @@
+import mimetypes
+import os
+import tempfile
+import zipfile
+from pathlib import Path
+
 from fastapi import APIRouter, Request
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
 from app.config import MP3_BITRATE_CHOICES
 from app.downloader import analyze_url, detect_platform, run_download
@@ -9,16 +17,52 @@ from app.schemas import (
     AnalyzeResponse,
     AudioQuality,
     DownloadRequest,
-    DownloadResponse,
     VideoQuality,
 )
 
 router = APIRouter()
 
 
-@router.post("/download", response_model=DownloadResponse)
+def _cleanup_files(*paths: Path) -> None:
+    for path in paths:
+        path.unlink(missing_ok=True)
+
+
+def _zip_files(files: list[Path]) -> Path:
+    fd, zip_path_str = tempfile.mkstemp(suffix=".zip")
+    zip_path = Path(zip_path_str)
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        for f in files:
+            archive.write(f, arcname=f.name)
+    os.close(fd)
+    return zip_path
+
+
+def _build_file_response(files: list[Path], platform: str) -> FileResponse:
+    if len(files) == 1:
+        target = files[0]
+        media_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+        return FileResponse(
+            target,
+            filename=target.name,
+            media_type=media_type,
+            headers={"X-Platform": platform},
+            background=BackgroundTask(_cleanup_files, target),
+        )
+
+    zip_path = _zip_files(files)
+    return FileResponse(
+        zip_path,
+        filename=f"{platform}_{files[0].stem}.zip",
+        media_type="application/zip",
+        headers={"X-Platform": platform},
+        background=BackgroundTask(_cleanup_files, zip_path, *files),
+    )
+
+
+@router.post("/download")
 @limiter.limit("5/minute")
-async def download(request: Request, payload: DownloadRequest) -> DownloadResponse:
+async def download(request: Request, payload: DownloadRequest) -> FileResponse:
     platform = detect_platform(payload.url)
     if platform is None:
         raise UnsupportedPlatformError(
@@ -27,14 +71,7 @@ async def download(request: Request, payload: DownloadRequest) -> DownloadRespon
 
     selection = payload.selection.model_dump(exclude_none=True) if payload.selection else None
     files = await run_download(payload.url, platform, selection)
-    filenames = [f.name for f in files]
-    preview_url = f"/media/{platform}/{filenames[0]}" if filenames else None
-
-    return DownloadResponse(
-        platform=platform,
-        filenames=filenames,
-        preview_url=preview_url,
-    )
+    return _build_file_response(files, platform)
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)

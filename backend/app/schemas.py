@@ -59,13 +59,6 @@ class AnalyzeResponse(BaseModel):
     audio_qualities: list[AudioQuality] = []
 
 
-class DownloadResponse(BaseModel):
-    status: str = "success"
-    platform: str
-    filenames: list[str]
-    preview_url: str | None = None
-
-
 class ErrorResponse(BaseModel):
     status: str = "error"
     error_code: str

@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
 from app.api import router as api_router
-from app.config import DOWNLOADS_ROOT, FILE_MAX_AGE_MINUTES, FRONTEND_DIST, PLATFORM_DIRS
+from app.config import FILE_MAX_AGE_MINUTES, FRONTEND_DIST, PLATFORM_DIRS
 from app.errors import DownloadError
 from app.limiter import limiter
 from app.schemas import ErrorResponse
@@ -43,6 +43,7 @@ app.add_middleware(
     allow_origins=allowed_origins,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
+    expose_headers=["Content-Disposition", "X-Platform"],
 )
 
 app.include_router(api_router, prefix="/api")
@@ -71,8 +72,6 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONRe
     )
     return JSONResponse(status_code=429, content=body.model_dump())
 
-
-app.mount("/media", StaticFiles(directory=DOWNLOADS_ROOT), name="media")
 
 if FRONTEND_DIST.exists():
     app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")

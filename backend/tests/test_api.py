@@ -10,25 +10,35 @@ from app.main import app
 client = TestClient(app)
 
 
-def test_download_success(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_download_success_streams_file_and_cleans_up(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    downloaded = tmp_path / "123.mp4"
+    downloaded.write_bytes(b"fake video bytes")
+
     async def fake_run_download(url: str, platform: str, selection=None) -> list[Path]:
-        return [Path("/tmp/downloads/tiktok/123.mp4")]
+        return [downloaded]
 
     monkeypatch.setattr(api_module, "run_download", fake_run_download)
 
     response = client.post("/api/download", json={"url": "https://www.tiktok.com/@u/video/123"})
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "success"
-    assert body["platform"] == "tiktok"
-    assert body["filenames"] == ["123.mp4"]
-    assert body["preview_url"] == "/media/tiktok/123.mp4"
+    assert response.content == b"fake video bytes"
+    assert response.headers["x-platform"] == "tiktok"
+    assert 'filename="123.mp4"' in response.headers["content-disposition"]
+    assert response.headers["content-type"] == "video/mp4"
+    # the source file must be deleted once it's been streamed to the client -
+    # nothing should persist server-side after a successful download
+    assert not downloaded.exists()
 
 
-def test_download_success_youtube(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_download_success_youtube_audio(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    downloaded = tmp_path / "dQw4w9WgXcQ.mp3"
+    downloaded.write_bytes(b"fake audio bytes")
+
     async def fake_run_download(url: str, platform: str, selection=None) -> list[Path]:
-        return [Path("/tmp/downloads/youtube/dQw4w9WgXcQ.mp4")]
+        return [downloaded]
 
     monkeypatch.setattr(api_module, "run_download", fake_run_download)
 
@@ -37,18 +47,41 @@ def test_download_success_youtube(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["platform"] == "youtube"
-    assert body["filenames"] == ["dQw4w9WgXcQ.mp4"]
-    assert body["preview_url"] == "/media/youtube/dQw4w9WgXcQ.mp4"
+    assert response.headers["x-platform"] == "youtube"
+    assert 'filename="dQw4w9WgXcQ.mp3"' in response.headers["content-disposition"]
+    assert not downloaded.exists()
 
 
-def test_download_forwards_selection_to_run_download(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_download_multiple_files_are_zipped(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    file_a = tmp_path / "1.jpg"
+    file_b = tmp_path / "2.jpg"
+    file_a.write_bytes(b"image a")
+    file_b.write_bytes(b"image b")
+
+    async def fake_run_download(url: str, platform: str, selection=None) -> list[Path]:
+        return [file_a, file_b]
+
+    monkeypatch.setattr(api_module, "run_download", fake_run_download)
+
+    response = client.post("/api/download", json={"url": "https://instagram.com/p/ABC"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["x-platform"] == "instagram"
+    assert not file_a.exists()
+    assert not file_b.exists()
+
+
+def test_download_forwards_selection_to_run_download(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     captured = {}
+    downloaded = tmp_path / "abc.mp3"
+    downloaded.write_bytes(b"fake audio bytes")
 
     async def fake_run_download(url: str, platform: str, selection=None) -> list[Path]:
         captured["selection"] = selection
-        return [Path("/tmp/downloads/youtube/abc.mp3")]
+        return [downloaded]
 
     monkeypatch.setattr(api_module, "run_download", fake_run_download)
 

@@ -1,11 +1,9 @@
 export type Platform = "tiktok" | "instagram" | "facebook" | "youtube";
 
-export interface DownloadResponse {
-  status: "success";
+export interface DownloadResult {
   platform: Platform;
-  files: string[];
-  filenames: string[];
-  preview_url: string | null;
+  filename: string;
+  blobUrl: string;
 }
 
 export interface ErrorResponse {
