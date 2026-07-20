@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Literal, TypedDict
 from urllib.parse import urlsplit
@@ -11,6 +12,8 @@ from app.errors import (
     ToolNotInstalledError,
     classify_stderr,
 )
+
+logger = logging.getLogger(__name__)
 
 Platform = Literal["tiktok", "instagram", "facebook", "youtube"]
 
@@ -109,6 +112,14 @@ async def _run_subprocess(args: list[str], timeout: int) -> tuple[int, bytes, by
         raise DownloadTimeoutError(
             "Download timed out. The link may be invalid or the platform is blocking automated access."
         ) from exc
+
+    if proc.returncode != 0:
+        logger.warning(
+            "Subprocess failed (exit %s): %s\nstderr: %s",
+            proc.returncode,
+            " ".join(args),
+            stderr.decode(errors="replace")[-2000:],
+        )
 
     return proc.returncode, stdout, stderr
 
