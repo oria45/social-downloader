@@ -250,8 +250,8 @@ def test_youtube_pot_args_included_when_server_home_exists_for_download(
     monkeypatch.setattr(downloader, "YOUTUBE_POT_SERVER_HOME", str(tmp_path))
     args = build_yt_dlp_args("https://www.youtube.com/watch?v=abc", tmp_path, platform="youtube")
 
-    assert "--extractor-args" in args
-    assert args[args.index("--extractor-args") + 1] == f"youtubepot-bgutilscript:server_home={tmp_path}"
+    assert f"youtubepot-bgutilscript:server_home={tmp_path}" in args
+    assert "youtube:player_client=android,web" in args
 
 
 def test_youtube_pot_args_included_for_analyze_and_list(
@@ -281,7 +281,7 @@ def test_youtube_pot_args_absent_for_non_youtube_platform(
 
 def test_youtube_pot_args_absent_when_server_home_missing(tmp_path) -> None:
     # Local dev without the pot-provider cloned in: must not error, just skip
-    # the extractor-args (YouTube still works fine from a residential IP).
+    # the pot server_home extractor-args (the player-client one still applies).
     from app import downloader
 
     missing_dir = tmp_path / "does-not-exist"
@@ -291,7 +291,7 @@ def test_youtube_pot_args_absent_when_server_home_missing(tmp_path) -> None:
             "https://www.youtube.com/watch?v=abc", tmp_path, platform="youtube"
         )
 
-    assert "--extractor-args" not in args
+    assert not any("server_home" in a for a in args)
 
 
 def test_classify_stderr_detects_youtube_bot_check() -> None:

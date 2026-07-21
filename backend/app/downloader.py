@@ -102,12 +102,20 @@ def is_profile_url(url: str, platform: Platform) -> bool:
 
 
 def _youtube_pot_args(platform: Platform | None) -> list[str]:
+    if platform != "youtube":
+        return []
+
+    # The "android" client is used first: it's historically less likely to
+    # trigger YouTube's hard bot-check gate on datacenter IPs than "web" is,
+    # confirmed empirically on Render alongside the PO token provider below.
+    args = ["--extractor-args", "youtube:player_client=android,web"]
+
     # Only applies when the pot-provider server dir was actually baked into
     # the image (see backend/Dockerfile) - absent in local dev, yt-dlp just
     # runs without a token, which is fine since only Render's IP is blocked.
-    if platform != "youtube" or not Path(YOUTUBE_POT_SERVER_HOME).exists():
-        return []
-    return ["--extractor-args", f"youtubepot-bgutilscript:server_home={YOUTUBE_POT_SERVER_HOME}"]
+    if Path(YOUTUBE_POT_SERVER_HOME).exists():
+        args += ["--extractor-args", f"youtubepot-bgutilscript:server_home={YOUTUBE_POT_SERVER_HOME}"]
+    return args
 
 
 def build_yt_dlp_args(
