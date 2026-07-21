@@ -3,6 +3,7 @@ uvicorn[standard]
 yt-dlp>=2025.05.22
 gallery-dl
 bgutil-ytdlp-pot-provider
+yt-dlp-invidious
 slowapi
 pytest
 httpx
