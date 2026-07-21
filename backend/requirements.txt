@@ -1,7 +1,8 @@
 fastapi
 uvicorn[standard]
-yt-dlp
+yt-dlp>=2025.05.22
 gallery-dl
+bgutil-ytdlp-pot-provider
 slowapi
 pytest
 httpx

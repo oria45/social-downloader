@@ -17,6 +17,13 @@ BATCH_MAX_ITEMS = int(os.environ.get("BATCH_MAX_ITEMS", 8))
 BATCH_CONCURRENCY = int(os.environ.get("BATCH_CONCURRENCY", 3))
 BATCH_ITEM_TIMEOUT_SECONDS = int(os.environ.get("BATCH_ITEM_TIMEOUT_SECONDS", 30))
 
+# PO token provider (script mode) used to bypass YouTube's bot-check on
+# datacenter IPs (e.g. Render). Empty/missing in local dev is fine - yt-dlp
+# just skips the token and YouTube usually still works from residential IPs.
+YOUTUBE_POT_SERVER_HOME = os.environ.get(
+    "YOUTUBE_POT_SERVER_HOME", "/opt/bgutil-ytdlp-pot-provider/server"
+)
+
 PLATFORM_DIRS = {
     "tiktok": DOWNLOADS_ROOT / "tiktok",
     "instagram": DOWNLOADS_ROOT / "instagram",

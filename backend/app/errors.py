@@ -56,9 +56,14 @@ _PRIVATE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 _RATE_LIMIT_PATTERNS = re.compile(r"429|rate.?limit|too many requests", re.IGNORECASE)
+_BOT_CHECK_PATTERNS = re.compile(r"sign in to confirm|not a bot", re.IGNORECASE)
 
 
 def classify_stderr(stderr_text: str) -> DownloadError:
+    if _BOT_CHECK_PATTERNS.search(stderr_text):
+        return ContentUnavailableError(
+            "YouTube is blocking this request as suspected bot traffic. Try again in a bit."
+        )
     if _RATE_LIMIT_PATTERNS.search(stderr_text):
         return RateLimitedError(
             "The platform is rate-limiting requests. Wait a few minutes and try again."

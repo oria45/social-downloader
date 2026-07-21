@@ -94,7 +94,7 @@ async def analyze(request: Request, payload: AnalyzeRequest) -> AnalyzeResponse:
             "Only TikTok, Instagram, Facebook, and YouTube links are supported."
         )
 
-    result = await analyze_url(payload.url)
+    result = await analyze_url(payload.url, platform)
     if not result.get("supports_quality_selection"):
         return AnalyzeResponse(platform=platform, supports_quality_selection=False)
 

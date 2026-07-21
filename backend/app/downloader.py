@@ -14,6 +14,7 @@ from app.config import (
     LIST_TIMEOUT_SECONDS,
     PLATFORM_DIRS,
     TIMEOUT_SECONDS,
+    YOUTUBE_POT_SERVER_HOME,
 )
 from app.errors import (
     DownloadFailedError,
@@ -100,7 +101,21 @@ def is_profile_url(url: str, platform: Platform) -> bool:
     return False
 
 
-def build_yt_dlp_args(url: str, out_dir: Path, selection: Selection | None = None) -> list[str]:
+def _youtube_pot_args(platform: Platform | None) -> list[str]:
+    # Only applies when the pot-provider server dir was actually baked into
+    # the image (see backend/Dockerfile) - absent in local dev, yt-dlp just
+    # runs without a token, which is fine since only Render's IP is blocked.
+    if platform != "youtube" or not Path(YOUTUBE_POT_SERVER_HOME).exists():
+        return []
+    return ["--extractor-args", f"youtubepot-bgutilscript:server_home={YOUTUBE_POT_SERVER_HOME}"]
+
+
+def build_yt_dlp_args(
+    url: str,
+    out_dir: Path,
+    selection: Selection | None = None,
+    platform: Platform | None = None,
+) -> list[str]:
     args = ["yt-dlp", "--no-playlist", "--playlist-items", "1", "-P", str(out_dir)]
 
     if selection and selection["type"] == "audio":
@@ -114,12 +129,22 @@ def build_yt_dlp_args(url: str, out_dir: Path, selection: Selection | None = Non
             "mp4",
         ]
 
+    args += _youtube_pot_args(platform)
     args += ["-o", "%(id)s.%(ext)s", "--print", "after_move:filepath", url]
     return args
 
 
-def build_yt_dlp_analyze_args(url: str) -> list[str]:
-    return ["yt-dlp", "-J", "--no-warnings", "--no-playlist", "--playlist-items", "1", url]
+def build_yt_dlp_analyze_args(url: str, platform: Platform | None = None) -> list[str]:
+    return [
+        "yt-dlp",
+        "-J",
+        "--no-warnings",
+        "--no-playlist",
+        "--playlist-items",
+        "1",
+        *_youtube_pot_args(platform),
+        url,
+    ]
 
 
 def _youtube_listing_url(url: str) -> str:
@@ -134,7 +159,7 @@ def _youtube_listing_url(url: str) -> str:
     return parsed._replace(path=path).geturl()
 
 
-def build_yt_dlp_list_args(url: str, limit: int) -> list[str]:
+def build_yt_dlp_list_args(url: str, limit: int, platform: Platform | None = None) -> list[str]:
     return [
         "yt-dlp",
         "--flat-playlist",
@@ -142,6 +167,7 @@ def build_yt_dlp_list_args(url: str, limit: int) -> list[str]:
         "--playlist-end",
         str(limit),
         "--no-warnings",
+        *_youtube_pot_args(platform),
         url,
     ]
 
@@ -158,7 +184,7 @@ async def list_profile_items(url: str, platform: Platform) -> tuple[list[Profile
     if platform == "youtube":
         url = _youtube_listing_url(url)
 
-    args = build_yt_dlp_list_args(url, LIST_ITEM_CAP)
+    args = build_yt_dlp_list_args(url, LIST_ITEM_CAP, platform)
     returncode, stdout, stderr = await _run_subprocess(args, LIST_TIMEOUT_SECONDS)
     if returncode != 0:
         raise classify_stderr(stderr.decode(errors="replace"))
@@ -293,7 +319,7 @@ async def _run_yt_dlp(
     selection: Selection | None = None,
     platform: Platform | None = None,
 ) -> list[Path]:
-    args = build_yt_dlp_args(url, out_dir, selection)
+    args = build_yt_dlp_args(url, out_dir, selection, platform)
     returncode, stdout, stderr = await _run_subprocess(args, TIMEOUT_SECONDS)
     if returncode != 0:
         raise classify_stderr(stderr.decode(errors="replace"))
@@ -323,8 +349,8 @@ async def _run_yt_dlp(
     return [result_path]
 
 
-async def analyze_url(url: str) -> AnalysisResult:
-    args = build_yt_dlp_analyze_args(url)
+async def analyze_url(url: str, platform: Platform | None = None) -> AnalysisResult:
+    args = build_yt_dlp_analyze_args(url, platform)
     returncode, stdout, stderr = await _run_subprocess(args, ANALYZE_TIMEOUT_SECONDS)
     if returncode != 0:
         error = classify_stderr(stderr.decode(errors="replace"))

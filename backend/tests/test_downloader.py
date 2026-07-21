@@ -6,6 +6,7 @@ import pytest
 from app.downloader import (
     analyze_url,
     build_gallery_dl_args,
+    build_yt_dlp_analyze_args,
     build_yt_dlp_args,
     build_yt_dlp_list_args,
     detect_platform,
@@ -14,7 +15,13 @@ from app.downloader import (
     run_batch_download,
     run_download,
 )
-from app.errors import ContentUnavailableError, DownloadFailedError, ToolNotInstalledError
+from app.errors import (
+    ContentUnavailableError,
+    DownloadFailedError,
+    RateLimitedError,
+    ToolNotInstalledError,
+    classify_stderr,
+)
 
 
 @pytest.mark.parametrize(
@@ -233,6 +240,74 @@ def test_analyze_url_raises_on_real_error(monkeypatch: pytest.MonkeyPatch) -> No
 )
 def test_is_profile_url(url: str, platform: str, expected: bool) -> None:
     assert is_profile_url(url, platform) == expected
+
+
+def test_youtube_pot_args_included_when_server_home_exists_for_download(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    monkeypatch.setattr(downloader, "YOUTUBE_POT_SERVER_HOME", str(tmp_path))
+    args = build_yt_dlp_args("https://www.youtube.com/watch?v=abc", tmp_path, platform="youtube")
+
+    assert "--extractor-args" in args
+    assert args[args.index("--extractor-args") + 1] == f"youtubepot-bgutilscript:server_home={tmp_path}"
+
+
+def test_youtube_pot_args_included_for_analyze_and_list(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    monkeypatch.setattr(downloader, "YOUTUBE_POT_SERVER_HOME", str(tmp_path))
+
+    analyze_args = build_yt_dlp_analyze_args("https://www.youtube.com/watch?v=abc", "youtube")
+    list_args = build_yt_dlp_list_args("https://www.youtube.com/@chan/videos", 24, "youtube")
+
+    assert "--extractor-args" in analyze_args
+    assert "--extractor-args" in list_args
+
+
+def test_youtube_pot_args_absent_for_non_youtube_platform(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    monkeypatch.setattr(downloader, "YOUTUBE_POT_SERVER_HOME", str(tmp_path))
+    args = build_yt_dlp_args("https://www.tiktok.com/@u/video/1", tmp_path, platform="tiktok")
+
+    assert "--extractor-args" not in args
+
+
+def test_youtube_pot_args_absent_when_server_home_missing(tmp_path) -> None:
+    # Local dev without the pot-provider cloned in: must not error, just skip
+    # the extractor-args (YouTube still works fine from a residential IP).
+    from app import downloader
+
+    missing_dir = tmp_path / "does-not-exist"
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(downloader, "YOUTUBE_POT_SERVER_HOME", str(missing_dir))
+        args = build_yt_dlp_args(
+            "https://www.youtube.com/watch?v=abc", tmp_path, platform="youtube"
+        )
+
+    assert "--extractor-args" not in args
+
+
+def test_classify_stderr_detects_youtube_bot_check() -> None:
+    error = classify_stderr(
+        "ERROR: [youtube] abc123: Sign in to confirm you're not a bot. "
+        "This helps protect our community."
+    )
+
+    assert isinstance(error, ContentUnavailableError)
+
+
+def test_classify_stderr_still_detects_rate_limit() -> None:
+    # Regression guard: the new bot-check pattern must not shadow this one.
+    error = classify_stderr("ERROR: HTTP Error 429: Too Many Requests")
+
+    assert isinstance(error, RateLimitedError)
 
 
 def test_build_yt_dlp_list_args_caps_and_uses_flat_playlist(tmp_path) -> None:

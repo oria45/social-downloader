@@ -166,7 +166,7 @@ def test_download_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_analyze_returns_qualities_for_yt_dlp_backed_content(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_analyze_url(url: str):
+    async def fake_analyze_url(url: str, platform: str | None = None):
         return {
             "supports_quality_selection": True,
             "title": "Me at the zoo",
@@ -194,7 +194,7 @@ def test_analyze_returns_qualities_for_yt_dlp_backed_content(
 def test_analyze_returns_no_quality_selection_for_gallery_dl_backed_content(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_analyze_url(url: str):
+    async def fake_analyze_url(url: str, platform: str | None = None):
         return {"supports_quality_selection": False}
 
     monkeypatch.setattr(api_module, "analyze_url", fake_analyze_url)
