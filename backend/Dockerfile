@@ -1,7 +1,14 @@
 FROM python:3.12-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg git nodejs npm \
+    && apt-get install -y --no-install-recommends ffmpeg git curl ca-certificates gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Debian bookworm's apt "nodejs" package is 18.x, but the pot-provider below
+# requires Node >=20 (older versions are silently treated as unavailable) -
+# install Node 20 LTS from NodeSource instead of the stale Debian package.
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # PO token provider for yt-dlp (script mode): lets YouTube requests pass
