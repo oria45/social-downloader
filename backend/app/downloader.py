@@ -415,7 +415,13 @@ async def run_download(
 ) -> list[Path]:
     out_dir = PLATFORM_DIRS[platform]
 
-    if platform in ("tiktok", "youtube"):
+    if platform in ("tiktok", "youtube") or selection is not None:
+        # gallery-dl has no concept of quality selection and always grabs
+        # whichever media is first in the post (--range 1). Falling back to
+        # it after an explicit video/audio selection would silently ignore
+        # that selection and can return the wrong item entirely (e.g. a
+        # carousel's cover image instead of the requested video) - a real
+        # yt-dlp failure here must surface as an error, not swap content.
         return await _run_yt_dlp(url, out_dir, selection, platform)
 
     try:

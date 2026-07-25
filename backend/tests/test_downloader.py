@@ -127,6 +127,59 @@ def test_youtube_routes_to_yt_dlp_only_no_gallery_dl_fallback(
         asyncio.run(run_download("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "youtube"))
 
 
+def test_instagram_with_selection_does_not_fall_back_to_gallery_dl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # gallery-dl ignores quality selection entirely and just grabs whatever is
+    # first in the post (--range 1) - for a carousel that can be a photo, not
+    # the requested video. A transient yt-dlp failure here must surface as a
+    # real error instead of silently swapping in unrelated content.
+    from app import downloader
+
+    async def failing_yt_dlp(url: str, out_dir, selection=None, platform=None):
+        raise RuntimeError("yt-dlp failed")
+
+    async def unexpected_gallery_dl(url: str, out_dir):
+        raise AssertionError("gallery-dl should never be called when a selection was requested")
+
+    monkeypatch.setattr(downloader, "_run_yt_dlp", failing_yt_dlp)
+    monkeypatch.setattr(downloader, "_run_gallery_dl", unexpected_gallery_dl)
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(
+            run_download(
+                "https://www.instagram.com/reel/ABC",
+                "instagram",
+                selection={"type": "video", "height": 720},
+            )
+        )
+
+
+def test_instagram_without_selection_still_falls_back_to_gallery_dl(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    # No selection means the caller just wants "whatever this post has" (e.g.
+    # an image-only post yt-dlp can't extract at all) - gallery-dl fallback
+    # is still correct and expected in that case.
+    from app import downloader
+
+    fallback_file = tmp_path / "ABC.jpg"
+    fallback_file.write_bytes(b"data")
+
+    async def failing_yt_dlp(url: str, out_dir, selection=None, platform=None):
+        raise RuntimeError("yt-dlp failed")
+
+    async def fake_gallery_dl(url: str, out_dir):
+        return [fallback_file]
+
+    monkeypatch.setattr(downloader, "_run_yt_dlp", failing_yt_dlp)
+    monkeypatch.setattr(downloader, "_run_gallery_dl", fake_gallery_dl)
+
+    result = asyncio.run(run_download("https://www.instagram.com/p/ABC", "instagram"))
+
+    assert result == [fallback_file]
+
+
 def test_yt_dlp_args_with_no_selection_have_no_format_flags(tmp_path) -> None:
     args = build_yt_dlp_args("https://tiktok.com/@u/video/1", tmp_path, selection=None)
     assert "-f" not in args
