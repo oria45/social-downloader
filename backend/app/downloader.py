@@ -25,7 +25,7 @@ from app.errors import (
 
 logger = logging.getLogger(__name__)
 
-Platform = Literal["tiktok", "instagram", "facebook", "youtube"]
+Platform = Literal["tiktok", "instagram", "facebook", "youtube", "twitter"]
 
 
 class Selection(TypedDict, total=False):
@@ -59,6 +59,7 @@ TIKTOK_HOSTS = {"tiktok.com", "vm.tiktok.com", "vt.tiktok.com", "m.tiktok.com"}
 INSTAGRAM_HOSTS = {"instagram.com"}
 FACEBOOK_HOSTS = {"facebook.com", "m.facebook.com", "web.facebook.com", "fb.watch"}
 YOUTUBE_HOSTS = {"youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"}
+TWITTER_HOSTS = {"twitter.com", "mobile.twitter.com", "x.com", "mobile.x.com"}
 
 
 def detect_platform(url: str) -> Platform | None:
@@ -77,6 +78,8 @@ def detect_platform(url: str) -> Platform | None:
         return "facebook"
     if hostname in YOUTUBE_HOSTS:
         return "youtube"
+    if hostname in TWITTER_HOSTS:
+        return "twitter"
     return None
 
 

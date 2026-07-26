@@ -29,6 +29,7 @@ PLATFORM_DIRS = {
     "instagram": DOWNLOADS_ROOT / "instagram",
     "facebook": DOWNLOADS_ROOT / "facebook",
     "youtube": DOWNLOADS_ROOT / "youtube",
+    "twitter": DOWNLOADS_ROOT / "twitter",
 }
 
 for _dir in PLATFORM_DIRS.values():

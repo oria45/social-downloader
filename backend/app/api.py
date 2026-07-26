@@ -77,7 +77,7 @@ async def download(request: Request, payload: DownloadRequest) -> FileResponse:
     platform = detect_platform(payload.url)
     if platform is None:
         raise UnsupportedPlatformError(
-            "Only TikTok, Instagram, Facebook, and YouTube links are supported."
+            "Only TikTok, Instagram, Facebook, YouTube, and Twitter/X links are supported."
         )
 
     selection = payload.selection.model_dump(exclude_none=True) if payload.selection else None
@@ -91,7 +91,7 @@ async def analyze(request: Request, payload: AnalyzeRequest) -> AnalyzeResponse:
     platform = detect_platform(payload.url)
     if platform is None:
         raise UnsupportedPlatformError(
-            "Only TikTok, Instagram, Facebook, and YouTube links are supported."
+            "Only TikTok, Instagram, Facebook, YouTube, and Twitter/X links are supported."
         )
 
     result = await analyze_url(payload.url, platform)
@@ -125,7 +125,7 @@ async def list_profile(request: Request, payload: ListRequest) -> ListResponse:
     platform = detect_platform(payload.url)
     if platform is None:
         raise UnsupportedPlatformError(
-            "Only TikTok, Instagram, Facebook, and YouTube links are supported."
+            "Only TikTok, Instagram, Facebook, YouTube, and Twitter/X links are supported."
         )
     if not is_profile_url(payload.url, platform):
         raise NotAProfileUrlError(
@@ -146,7 +146,7 @@ async def download_batch(request: Request, payload: BatchDownloadRequest) -> Fil
     platform = detect_platform(payload.urls[0])
     if platform is None or any(detect_platform(u) != platform for u in payload.urls):
         raise UnsupportedPlatformError(
-            "Only TikTok, Instagram, Facebook, and YouTube links are supported, and all "
+            "Only TikTok, Instagram, Facebook, YouTube, and Twitter/X links are supported, and all "
             "selected items must be from the same platform."
         )
 

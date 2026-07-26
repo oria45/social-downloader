@@ -40,6 +40,10 @@ from app.errors import (
         ("https://m.youtube.com/watch?v=dQw4w9WgXcQ", "youtube"),
         ("https://music.youtube.com/watch?v=dQw4w9WgXcQ", "youtube"),
         ("https://www.youtube.com/@somechannel", "youtube"),
+        ("https://twitter.com/user/status/123", "twitter"),
+        ("https://x.com/user/status/123", "twitter"),
+        ("https://mobile.twitter.com/user/status/123", "twitter"),
+        ("https://mobile.x.com/user/status/123", "twitter"),
     ],
 )
 def test_detect_platform_positive(url: str, expected: str) -> None:
@@ -52,6 +56,7 @@ def test_detect_platform_positive(url: str, expected: str) -> None:
         "https://example.com/video",
         "https://notfacebook.com.evil.example/watch",
         "https://notyoutube.com.evil.example/watch",
+        "https://notx.com.evil.example/status/1",
         "not a url",
         "",
     ],
@@ -289,6 +294,7 @@ def test_analyze_url_raises_on_real_error(monkeypatch: pytest.MonkeyPatch) -> No
         ("https://www.youtube.com/shorts/abc", "youtube", False),
         ("https://www.instagram.com/instagram/", "instagram", False),
         ("https://www.facebook.com/someuser", "facebook", False),
+        ("https://twitter.com/someuser", "twitter", False),
     ],
 )
 def test_is_profile_url(url: str, platform: str, expected: bool) -> None:

@@ -1,4 +1,4 @@
-export type Platform = "tiktok" | "instagram" | "facebook" | "youtube";
+export type Platform = "tiktok" | "instagram" | "facebook" | "youtube" | "twitter";
 
 export interface DownloadResult {
   platform: Platform;

@@ -76,7 +76,7 @@ export function DownloadForm() {
   return (
     <section className={styles.container} aria-labelledby="download-heading">
       <h1 id="download-heading" className={styles.title}>
-        Save from TikTok, Instagram, Facebook, or YouTube
+        Save from TikTok, Instagram, Facebook, YouTube, or Twitter/X
       </h1>
       <p className={styles.subtitle}>Paste a link below to download it to this computer.</p>
 
