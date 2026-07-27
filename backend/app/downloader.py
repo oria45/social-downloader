@@ -254,7 +254,8 @@ async def _run_subprocess(args: list[str], timeout: int) -> tuple[int, bytes, by
         )
     except FileNotFoundError as exc:
         raise ToolNotInstalledError(
-            "A required tool is missing. Re-run run.command to reinstall dependencies."
+            "A required tool is missing. Re-run the launcher script "
+            "(social-downloader.command / social-downloader.bat) to reinstall dependencies."
         ) from exc
 
     try:

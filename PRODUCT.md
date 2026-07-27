@@ -6,7 +6,7 @@ product
 
 ## Users
 
-A single user (the owner) running this on their own Mac. No public audience, no onboarding funnel, no multi-tenant concerns. Used ad hoc whenever they want to save a video, reel, or clip they found on TikTok, Instagram, Facebook, or YouTube, straight to local disk.
+A single user (the owner) running this on their own computer (Mac or Windows). No public audience, no onboarding funnel, no multi-tenant concerns. Used ad hoc whenever they want to save a video, reel, or clip they found on TikTok, Instagram, Facebook, or YouTube, straight to local disk.
 
 ## Product Purpose
 
