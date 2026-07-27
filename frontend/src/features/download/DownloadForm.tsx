@@ -48,6 +48,17 @@ export function DownloadForm() {
   const finalDownloadState = listState.status === "success" ? batchDownloadState : downloadState;
   const isDownloading = finalDownloadState.status === "loading";
 
+  // The picker shows a default quality (first video, else first audio) before the user
+  // touches it, so the actual download must use that same default - not just whatever
+  // `selection` state holds - or clicking Download without changing the radio silently
+  // sends no selection at all (yt-dlp then picks its own best format, which is often a
+  // higher-bitrate webm/vp9+opus combo instead of the mp4 quality shown as selected).
+  const effectiveSelection =
+    selection ??
+    (analyzeState.status === "success"
+      ? defaultSelection(analyzeState.result.video_qualities, analyzeState.result.audio_qualities)
+      : null);
+
   function handleLinkSubmit(submittedUrl: string) {
     setUrl(submittedUrl);
     if (isProfileUrl(submittedUrl)) {
@@ -66,7 +77,7 @@ export function DownloadForm() {
   }
 
   function handleDownload() {
-    void download(url, selection ?? undefined);
+    void download(url, effectiveSelection ?? undefined);
   }
 
   function handleBatchDownload(urls: string[]) {
@@ -108,13 +119,7 @@ export function DownloadForm() {
                 thumbnail={analyzeState.result.thumbnail}
                 videoQualities={analyzeState.result.video_qualities}
                 audioQualities={analyzeState.result.audio_qualities}
-                selection={
-                  selection ??
-                  defaultSelection(
-                    analyzeState.result.video_qualities,
-                    analyzeState.result.audio_qualities,
-                  ) ?? { type: "video", height: 0 }
-                }
+                selection={effectiveSelection ?? { type: "video", height: 0 }}
                 onSelectionChange={setSelection}
                 onDownload={handleDownload}
                 onChangeLink={handleChangeLink}
