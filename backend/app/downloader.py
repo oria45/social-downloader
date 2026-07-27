@@ -108,17 +108,19 @@ def _youtube_pot_args(platform: Platform | None) -> list[str]:
     if platform != "youtube":
         return []
 
-    # The "android" client is used first: it's historically less likely to
-    # trigger YouTube's hard bot-check gate on datacenter IPs than "web" is,
-    # confirmed empirically on Render alongside the PO token provider below.
-    args = ["--extractor-args", "youtube:player_client=android,web"]
+    # Forcing player_client=android,web was tried as a Render bot-check
+    # workaround, but it never actually fixed that (confirmed - Render still
+    # got blocked) and it does have a real cost: those two clients are
+    # SABR-restricted without a JS runtime/PO token, which silently drops
+    # every format above 360p (confirmed: 27 formats incl. 1080p normally,
+    # only 5 formats capped at 360p with the override). Not worth keeping.
 
     # Only applies when the pot-provider server dir was actually baked into
     # the image (see backend/Dockerfile) - absent in local dev, yt-dlp just
     # runs without a token, which is fine since only Render's IP is blocked.
     if Path(YOUTUBE_POT_SERVER_HOME).exists():
-        args += ["--extractor-args", f"youtubepot-bgutilscript:server_home={YOUTUBE_POT_SERVER_HOME}"]
-    return args
+        return ["--extractor-args", f"youtubepot-bgutilscript:server_home={YOUTUBE_POT_SERVER_HOME}"]
+    return []
 
 
 def build_yt_dlp_args(

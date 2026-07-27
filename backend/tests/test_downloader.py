@@ -310,7 +310,11 @@ def test_youtube_pot_args_included_when_server_home_exists_for_download(
     args = build_yt_dlp_args("https://www.youtube.com/watch?v=abc", tmp_path, platform="youtube")
 
     assert f"youtubepot-bgutilscript:server_home={tmp_path}" in args
-    assert "youtube:player_client=android,web" in args
+    # player_client is deliberately NOT forced - android,web are SABR-restricted
+    # without a JS runtime/PO token and silently cap quality at 360p (regression
+    # confirmed against a real video: 27 formats up to 1080p normally, only 5
+    # capped at 360p with the override) - and it never fixed Render's bot-check.
+    assert "youtube:player_client=android,web" not in args
 
 
 def test_youtube_pot_args_included_for_analyze_and_list(
@@ -340,7 +344,8 @@ def test_youtube_pot_args_absent_for_non_youtube_platform(
 
 def test_youtube_pot_args_absent_when_server_home_missing(tmp_path) -> None:
     # Local dev without the pot-provider cloned in: must not error, just skip
-    # the pot server_home extractor-args (the player-client one still applies).
+    # the extractor-args entirely (no player_client override left to fall
+    # back on - it was removed, see test_youtube_pot_args_included_... above).
     from app import downloader
 
     missing_dir = tmp_path / "does-not-exist"
@@ -350,7 +355,7 @@ def test_youtube_pot_args_absent_when_server_home_missing(tmp_path) -> None:
             "https://www.youtube.com/watch?v=abc", tmp_path, platform="youtube"
         )
 
-    assert not any("server_home" in a for a in args)
+    assert "--extractor-args" not in args
 
 
 def test_classify_stderr_detects_youtube_bot_check() -> None:
