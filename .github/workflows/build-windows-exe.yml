@@ -31,7 +31,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path backend/tools | Out-Null
 
           Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "backend/tools/yt-dlp.exe"
-          Invoke-WebRequest -Uri "https://github.com/mikf/gallery-dl/releases/latest/download/gallery-dl.exe" -OutFile "backend/tools/gallery-dl.exe"
+          # gallery-dl's active releases (with binary assets) moved to Codeberg -
+          # the GitHub releases are changelog-only mirrors with no attached exe.
+          # Codeberg (Gitea) supports the same /releases/download/latest/ alias.
+          Invoke-WebRequest -Uri "https://codeberg.org/mikf/gallery-dl/releases/download/latest/gallery-dl.exe" -OutFile "backend/tools/gallery-dl.exe"
 
           Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -OutFile "ffmpeg.zip"
           Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg-extracted"
