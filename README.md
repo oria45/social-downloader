@@ -2,7 +2,13 @@
 
 Paste a TikTok, Instagram, Facebook, YouTube, or Twitter/X link, pick a quality, and it downloads straight to your computer. Nothing is kept on the server after the download completes.
 
-## Running it
+## Windows: just download the app
+
+Most people on Windows don't need to install anything else. Grab the latest build from [GitHub Actions](https://github.com/oria45/social-downloader/actions/workflows/build-windows-exe.yml) (or the [Releases page](https://github.com/oria45/social-downloader/releases) for tagged versions), unzip it, and double-click `social-downloader.exe`. yt-dlp, gallery-dl, and ffmpeg are bundled inside — nothing else to install.
+
+## Running from source
+
+For Mac, or if you want to tinker with the code yourself:
 
 1. Clone or download this repo.
 2. Double-click the launcher for your OS:

@@ -1,9 +1,11 @@
 import os
 from pathlib import Path
 
+from app import paths
+
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
-DOWNLOADS_ROOT = BACKEND_ROOT / "downloads"
-FRONTEND_DIST = BACKEND_ROOT.parent / "frontend" / "dist"
+DOWNLOADS_ROOT = paths.writable_data_dir()
+FRONTEND_DIST = paths.frontend_dist_dir()
 
 PORT = int(os.environ.get("PORT", 8765))
 TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", 45))

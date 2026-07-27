@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal, TypedDict
 from urllib.parse import urlsplit
 
+from app import paths
 from app.config import (
     ANALYZE_TIMEOUT_SECONDS,
     BATCH_CONCURRENCY,
@@ -123,13 +124,22 @@ def _youtube_pot_args(platform: Platform | None) -> list[str]:
     return []
 
 
+def _ffmpeg_location_args() -> list[str]:
+    # Frozen desktop build: yt-dlp needs to be told where the bundled ffmpeg
+    # lives, since it isn't on PATH like in dev/Docker.
+    if not paths.is_frozen():
+        return []
+    ffmpeg_dir = str(Path(paths.tool_path("ffmpeg")).parent)
+    return ["--ffmpeg-location", ffmpeg_dir]
+
+
 def build_yt_dlp_args(
     url: str,
     out_dir: Path,
     selection: Selection | None = None,
     platform: Platform | None = None,
 ) -> list[str]:
-    args = ["yt-dlp", "--no-playlist", "--playlist-items", "1", "-P", str(out_dir)]
+    args = [paths.tool_path("yt-dlp"), "--no-playlist", "--playlist-items", "1", "-P", str(out_dir)]
 
     if selection and selection["type"] == "audio":
         args += ["-x", "--audio-format", "mp3", "--audio-quality", f"{selection['bitrate']}K"]
@@ -143,19 +153,21 @@ def build_yt_dlp_args(
         ]
 
     args += _youtube_pot_args(platform)
+    args += _ffmpeg_location_args()
     args += ["-o", "%(id)s.%(ext)s", "--print", "after_move:filepath", url]
     return args
 
 
 def build_yt_dlp_analyze_args(url: str, platform: Platform | None = None) -> list[str]:
     return [
-        "yt-dlp",
+        paths.tool_path("yt-dlp"),
         "-J",
         "--no-warnings",
         "--no-playlist",
         "--playlist-items",
         "1",
         *_youtube_pot_args(platform),
+        *_ffmpeg_location_args(),
         url,
     ]
 
@@ -174,7 +186,7 @@ def _youtube_listing_url(url: str) -> str:
 
 def build_yt_dlp_list_args(url: str, limit: int, platform: Platform | None = None) -> list[str]:
     return [
-        "yt-dlp",
+        paths.tool_path("yt-dlp"),
         "--flat-playlist",
         "--dump-json",
         "--playlist-end",
@@ -233,7 +245,7 @@ async def list_profile_items(url: str, platform: Platform) -> tuple[list[Profile
 
 def build_gallery_dl_args(url: str, out_dir: Path) -> list[str]:
     return [
-        "gallery-dl",
+        paths.tool_path("gallery-dl"),
         "--range",
         "1",
         # -D (exact directory) rather than -d (base + site/user subfolders):
@@ -281,7 +293,7 @@ async def _run_subprocess(args: list[str], timeout: int) -> tuple[int, bytes, by
 async def _file_has_audio(path: Path) -> bool:
     try:
         proc = await asyncio.create_subprocess_exec(
-            "ffprobe",
+            paths.tool_path("ffprobe"),
             "-v",
             "error",
             "-select_streams",
@@ -310,7 +322,7 @@ def _build_tiktok_audio_retry_args(url: str, out_dir: Path) -> list[str]:
     # (the literal save-video endpoint) is reliably audio+video, so this is
     # the corrective retry when the first attempt turns out silent.
     return [
-        "yt-dlp",
+        paths.tool_path("yt-dlp"),
         "--no-playlist",
         "--playlist-items",
         "1",
@@ -321,6 +333,7 @@ def _build_tiktok_audio_retry_args(url: str, out_dir: Path) -> list[str]:
         str(out_dir),
         "-o",
         "%(id)s.%(ext)s",
+        *_ffmpeg_location_args(),
         "--print",
         "after_move:filepath",
         url,
