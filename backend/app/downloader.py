@@ -145,8 +145,16 @@ def build_yt_dlp_args(
         args += ["-x", "--audio-format", "mp3", "--audio-quality", f"{selection['bitrate']}K"]
     elif selection and selection["type"] == "video":
         height = selection["height"]
+        # Prefer an h264/avc video stream first: some sources (e.g. Instagram
+        # reels) only offer VP9 DASH streams, and VP9-in-mp4 (as opposed to
+        # VP9-in-webm) fails to decode on plenty of devices/players (notably
+        # iOS) even though the file itself is valid - confirmed empirically.
+        # Falls through to any codec, then yt-dlp's own single-format "best",
+        # if no h264 alternative exists - _maybe_transcode_to_h264 below
+        # catches that remaining case with an actual re-encode.
         args += [
             "-f",
+            f"bestvideo[vcodec^=avc][height<={height}]+bestaudio/"
             f"bestvideo[height<={height}]+bestaudio/best[height<={height}]",
             "--merge-output-format",
             "mp4",
@@ -314,6 +322,64 @@ async def _file_has_audio(path: Path) -> bool:
     return bool(stdout.strip())
 
 
+async def _video_codec(path: Path) -> str | None:
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            paths.tool_path("ffprobe"),
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_name",
+            "-of",
+            "csv=p=0",
+            str(path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+    except Exception:
+        # ffprobe missing or failed to run - skip the compatibility check
+        # rather than blocking downloads on what is just a diagnostic step.
+        return None
+    return stdout.decode(errors="replace").strip() or None
+
+
+async def _transcode_to_h264(path: Path) -> Path:
+    # VP9 (and other non-h264 codecs) inside an mp4 container fails to decode
+    # on plenty of devices/players (notably iOS) even though the file itself
+    # is valid - confirmed empirically against a real Instagram reel served
+    # only as VP9 DASH streams. Re-encoding is the only real fix when no
+    # h264 source stream exists at all (the format selector already prefers
+    # h264 when available - see build_yt_dlp_args).
+    transcoded_path = path.with_stem(f"{path.stem}_h264")
+    args = [
+        paths.tool_path("ffmpeg"),
+        "-y",
+        "-i",
+        str(path),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23",
+        "-c:a",
+        "copy",
+        str(transcoded_path),
+    ]
+    returncode, _, stderr = await _run_subprocess(args, TIMEOUT_SECONDS)
+    if returncode != 0:
+        logger.warning(
+            "H.264 transcode failed, keeping original codec: %s",
+            stderr.decode(errors="replace")[-500:],
+        )
+        return path
+    path.unlink(missing_ok=True)
+    return transcoded_path
+
+
 def _build_tiktok_audio_retry_args(url: str, out_dir: Path) -> list[str]:
     # TikTok's per-resolution formats (bytevc1_*/h264_*) sometimes report
     # acodec: aac in their metadata but actually serve a video-only stream in
@@ -372,6 +438,16 @@ async def _run_yt_dlp(
                 return [retry_path]
         # Retry failed for some reason - fall back to the original file rather
         # than erroring out; a silent video is still better than none at all.
+
+    if not is_audio_extraction:
+        codec = await _video_codec(result_path)
+        if codec and codec != "h264":
+            logger.info(
+                "Transcoding non-h264 video (%s) to h264 for playback compatibility: %s",
+                codec,
+                url,
+            )
+            result_path = await _transcode_to_h264(result_path)
 
     return [result_path]
 

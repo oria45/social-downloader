@@ -196,7 +196,10 @@ def test_yt_dlp_args_with_video_selection(tmp_path) -> None:
         "https://www.youtube.com/watch?v=abc", tmp_path, selection={"type": "video", "height": 720}
     )
     assert "-f" in args
-    assert args[args.index("-f") + 1] == "bestvideo[height<=720]+bestaudio/best[height<=720]"
+    assert args[args.index("-f") + 1] == (
+        "bestvideo[vcodec^=avc][height<=720]+bestaudio/"
+        "bestvideo[height<=720]+bestaudio/best[height<=720]"
+    )
     assert "--merge-output-format" in args
     assert args[args.index("--merge-output-format") + 1] == "mp4"
     assert "-x" not in args
@@ -680,3 +683,169 @@ def test_file_has_audio_fails_open_when_ffprobe_unavailable(
 
     # ffprobe missing shouldn't block downloads - fail open (assume audio ok)
     assert asyncio.run(downloader._file_has_audio(tmp_path / "some.mp4")) is True
+
+
+def test_video_codec_returns_codec_name(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from app import downloader
+
+    class FakeProc:
+        async def communicate(self):
+            return b"vp9\n", b""
+
+    async def fake_create_subprocess_exec(*args, **kwargs):
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    assert asyncio.run(downloader._video_codec(tmp_path / "some.mp4")) == "vp9"
+
+
+def test_video_codec_returns_none_when_ffprobe_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    async def fake_create_subprocess_exec(*args, **kwargs):
+        raise FileNotFoundError("ffprobe not found")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    assert asyncio.run(downloader._video_codec(tmp_path / "some.mp4")) is None
+
+
+def test_transcode_to_h264_builds_correct_args_and_replaces_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    original = tmp_path / "clip.mp4"
+    original.write_bytes(b"vp9 data")
+
+    captured_args = {}
+
+    async def fake_run_subprocess(args, timeout):
+        captured_args["args"] = args
+        transcoded = tmp_path / "clip_h264.mp4"
+        transcoded.write_bytes(b"h264 data")
+        return 0, b"", b""
+
+    monkeypatch.setattr(downloader, "_run_subprocess", fake_run_subprocess)
+
+    result = asyncio.run(downloader._transcode_to_h264(original))
+
+    assert result == tmp_path / "clip_h264.mp4"
+    assert not original.exists()
+    args = captured_args["args"]
+    assert "-c:v" in args
+    assert args[args.index("-c:v") + 1] == "libx264"
+    assert "-c:a" in args
+    assert args[args.index("-c:a") + 1] == "copy"
+
+
+def test_transcode_to_h264_keeps_original_on_ffmpeg_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    original = tmp_path / "clip.mp4"
+    original.write_bytes(b"vp9 data")
+
+    async def fake_run_subprocess(args, timeout):
+        return 1, b"", b"ffmpeg exploded"
+
+    monkeypatch.setattr(downloader, "_run_subprocess", fake_run_subprocess)
+
+    result = asyncio.run(downloader._transcode_to_h264(original))
+
+    assert result == original
+    assert original.exists()
+
+
+def test_run_yt_dlp_transcodes_non_h264_video(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    vp9_file = tmp_path / "abc.mp4"
+    vp9_file.write_bytes(b"vp9 video")
+    h264_file = tmp_path / "abc_h264.mp4"
+
+    async def fake_run_subprocess(args, timeout):
+        return 0, str(vp9_file).encode(), b""
+
+    async def fake_video_codec(path):
+        return "vp9"
+
+    async def fake_transcode(path):
+        return h264_file
+
+    monkeypatch.setattr(downloader, "_run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr(downloader, "_video_codec", fake_video_codec)
+    monkeypatch.setattr(downloader, "_transcode_to_h264", fake_transcode)
+
+    result = asyncio.run(
+        downloader._run_yt_dlp(
+            "https://www.instagram.com/reel/abc", tmp_path, selection=None, platform="instagram"
+        )
+    )
+
+    assert result == [h264_file]
+
+
+def test_run_yt_dlp_does_not_transcode_h264_video(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    h264_file = tmp_path / "abc.mp4"
+    h264_file.write_bytes(b"h264 video")
+
+    async def fake_run_subprocess(args, timeout):
+        return 0, str(h264_file).encode(), b""
+
+    async def fake_video_codec(path):
+        return "h264"
+
+    async def unexpected_transcode(path):
+        raise AssertionError("should not transcode an already-h264 video")
+
+    monkeypatch.setattr(downloader, "_run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr(downloader, "_video_codec", fake_video_codec)
+    monkeypatch.setattr(downloader, "_transcode_to_h264", unexpected_transcode)
+
+    result = asyncio.run(
+        downloader._run_yt_dlp(
+            "https://www.instagram.com/reel/abc", tmp_path, selection=None, platform="instagram"
+        )
+    )
+
+    assert result == [h264_file]
+
+
+def test_run_yt_dlp_skips_codec_check_for_audio_only_selection(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from app import downloader
+
+    audio_file = tmp_path / "abc.mp3"
+    audio_file.write_bytes(b"audio only")
+
+    async def fake_run_subprocess(args, timeout):
+        return 0, str(audio_file).encode(), b""
+
+    async def unexpected_video_codec(path):
+        raise AssertionError("codec check is for video downloads, not audio extraction")
+
+    monkeypatch.setattr(downloader, "_run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr(downloader, "_video_codec", unexpected_video_codec)
+
+    result = asyncio.run(
+        downloader._run_yt_dlp(
+            "https://www.instagram.com/reel/abc",
+            tmp_path,
+            selection={"type": "audio", "bitrate": 128},
+            platform="instagram",
+        )
+    )
+
+    assert result == [audio_file]
