@@ -9,6 +9,12 @@ FRONTEND_DIST = paths.frontend_dist_dir()
 
 PORT = int(os.environ.get("PORT", 8765))
 TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", 45))
+# Separate, longer budget for the VP9->h264 transcode pass: CPU-bound video
+# encoding is much slower than a network download/merge, especially on
+# Render's free-tier CPU - confirmed empirically (an Instagram VP9 reel that
+# downloads in seconds locally hit the 45s download timeout once transcoding
+# was added, on Render specifically).
+TRANSCODE_TIMEOUT_SECONDS = int(os.environ.get("TRANSCODE_TIMEOUT_SECONDS", 90))
 ANALYZE_TIMEOUT_SECONDS = int(os.environ.get("ANALYZE_TIMEOUT_SECONDS", 30))
 FILE_MAX_AGE_MINUTES = int(os.environ.get("FILE_MAX_AGE_MINUTES", 30))
 MP3_BITRATE_CHOICES = (128, 192, 320)

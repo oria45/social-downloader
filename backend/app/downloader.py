@@ -15,6 +15,7 @@ from app.config import (
     LIST_TIMEOUT_SECONDS,
     PLATFORM_DIRS,
     TIMEOUT_SECONDS,
+    TRANSCODE_TIMEOUT_SECONDS,
     YOUTUBE_POT_SERVER_HOME,
 )
 from app.errors import (
@@ -362,14 +363,14 @@ async def _transcode_to_h264(path: Path) -> Path:
         "-c:v",
         "libx264",
         "-preset",
-        "veryfast",
+        "ultrafast",
         "-crf",
         "23",
         "-c:a",
         "copy",
         str(transcoded_path),
     ]
-    returncode, _, stderr = await _run_subprocess(args, TIMEOUT_SECONDS)
+    returncode, _, stderr = await _run_subprocess(args, TRANSCODE_TIMEOUT_SECONDS)
     if returncode != 0:
         logger.warning(
             "H.264 transcode failed, keeping original codec: %s",
